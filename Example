@@ -1,0 +1,71 @@
+#Load libraries
+library(zoo)
+library(forecast)
+library(foreach)
+library(doSNOW)
+library(plyr)
+library(fitdistrplus)
+library(pscl)
+library(data.table)
+library(stringr)
+
+
+fh <- 28 #Forecasting horizon based on M5 competition
+q_targets <- c(0.500, 0.750, 0.835, 0.975, 0.995) #Quantiles of interest
+method_names <- c("Naive", "sNaive", "SES", "ETS", "ARIMA", 
+                  "QEE-mode", "QEE-median", 
+                  "T-norm", "T-pois", "T-nbinom",
+                  "SES-QEE-mse", "SES-QEE-pl",        
+                  "SES-emp", "SES-sim-o", "SES-sim-no","SES-sim-o-fh", "SES-sim-no-fh")
+
+set.seed(102)
+input <- ts(rpois(150, 3.5), frequency = 7) #Create random series that represent past product-store sales
+insample <- head(input, length(input)-fh)
+outsample <- tail(input, fh)
+
+Qforecasts <- NULL
+
+# Established time series methods - M5 benchmarks
+Qforecasts[length(Qforecasts)+1] <- list(m5_stat_benchmarks(x = insample, q= q_targets, fh=fh, positive=T, model = "naive"))
+
+Qforecasts[length(Qforecasts)+1] <- list(m5_stat_benchmarks(x = insample, q= q_targets, fh=fh, positive=T, model = "snaive"))
+
+Qforecasts[length(Qforecasts)+1] <- list(m5_stat_benchmarks(x = insample, q= q_targets, fh=fh, positive=T, model = "ses"))
+
+Qforecasts[length(Qforecasts)+1] <- list(m5_stat_benchmarks(x = insample, q= q_targets, fh=fh, positive=T, model = "ets"))
+
+Qforecasts[length(Qforecasts)+1] <- list(m5_stat_benchmarks(x = insample, q= q_targets, fh=fh, positive=T, model = "arima"))
+
+Qforecasts[length(Qforecasts)+1] <- list(dist_calc(x = insample, q= q_targets, fh=fh, positive=T, distT = "emp-8"))
+
+# Theoretical estimations
+Qforecasts[length(Qforecasts)+1] <- list(dist_calc(x = insample, q= q_targets, fh=fh, positive=T, distT = "pois"))
+
+Qforecasts[length(Qforecasts)+1] <- list(dist_calc(x = insample, q= q_targets, fh=fh, positive=T, distT = "nbinom"))
+
+# SES on empirical quantiles of data
+Qforecasts[length(Qforecasts)+1] <- list(ses_quantile(x = insample, q = q_targets, fh = fh, opt = "mse", positive = T))
+
+Qforecasts[length(Qforecasts)+1] <- list(ses_quantile(x = insample, q = q_targets, fh = fh, opt = "pl", positive = T))
+
+# SES with simulated (out-of-sample) or empirical (in-sample) errors
+Qforecasts[length(Qforecasts)+1] <- list(res_sim_errors(x = insample, q= q_targets, fh=fh, Nboots=100, positive=T, type_m = "SES-emp"))
+
+Qforecasts[length(Qforecasts)+1] <- list(res_sim_errors(x = insample, q= q_targets, fh=fh, Nboots=100, positive=T, type_m = "SES-sim-o"))
+
+Qforecasts[length(Qforecasts)+1] <- list(res_sim_errors(x = insample, q= q_targets, fh=fh, Nboots=100, positive=T, type_m = "SES-sim-no"))
+
+Qforecasts[length(Qforecasts)+1] <- list(res_sim_errors(x = insample, q= q_targets, fh=fh, Nboots=100, positive=T, type_m = "SES-sim-o-fh"))
+
+Qforecasts[length(Qforecasts)+1] <- list(res_sim_errors(x = insample, q= q_targets, fh=fh, Nboots=100, positive=T, type_m = "SES-sim-no-fh"))
+
+#Visualize results
+plot(input)
+lines(outsample, col="red")
+lines( ts(Qforecasts[[10]]$q0.75, frequency = 7, start = start(outsample)), col="blue", lty=2)
+lines( ts(Qforecasts[[10]]$q0.835, frequency = 7, start = start(outsample)), col="blue", lty=3)
+lines( ts(Qforecasts[[10]]$q0.975, frequency = 7, start = start(outsample)), col="blue", lty=4)
+lines( ts(Qforecasts[[10]]$q0.995, frequency = 7, start = start(outsample)), col="blue", lty=5)
+legend("topleft", legend=c("insample","out-of-sample",q_targets),
+       col=c("black","red", rep("blue",4)), lty=c(1,1,2:5), cex=0.8)
+
